@@ -1,0 +1,867 @@
+#!/usr/bin/sh
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025 Konstantin Kushnir <chpock@gmail.com>
+# Source: https://github.com/chpock/ck.screenshot
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+set -e
+
+rofi_item() {
+    if [ -z "$2" ]; then
+        printf '%s\n' "$1"
+    else
+        printf '%s\000%s\037%s' "$1" "$2" "$3"
+        shift 3
+        [ -z "$1" ] || printf '\037%s\037%s' "$@"
+        printf '\n'
+    fi
+}
+
+escape_pango() {
+    echo "$1" | sed \
+        -e 's/&/\&amp;/g' \
+        -e 's/</\&lt;/g' \
+        -e 's/>/\&gt;/g' \
+        -e "s/'/\&apos;/g" \
+        -e 's/"/\&quot;/g'
+}
+
+expand_tilde() {
+    # shellcheck disable=SC2088
+    case "$1" in
+        "~"|"~/")
+            echo "$HOME"
+            ;;
+        "~"/*)
+            echo "$HOME${1#"~"}"
+            ;;
+        "~"*)
+            _USER_PART="${1%%/*}"
+            _USER="${_USER_PART#"~"}"
+            _HOME="$(getent passwd "$_USER" | cut -d: -f6)" || return 1
+            [ -n "$_HOME" ] || return 1
+            _REST="${1#"$_USER_PART"}"
+            if [ -z "$_REST" ] || [ "$_REST" = "/" ]; then
+                echo "$_HOME"
+            else
+                echo "$_HOME$_REST"
+            fi
+            ;;
+        *)
+            echo "$1"
+            ;;
+    esac
+}
+
+homify() {
+    case "$1" in
+        "$HOME")
+            echo "~"
+            ;;
+        "$HOME"/*)
+            echo "~${1#"$HOME"}"
+            ;;
+        *)
+            echo "$1"
+            ;;
+    esac
+}
+
+rofi_directory_items() {
+    PREVIOUS_DIR="$2"
+    if ! CURRENT_DIR="$(expand_tilde "$1")" || ! cd -- "$CURRENT_DIR" 2>/dev/null; then
+        X="$CURRENT_DIR"
+        CURRENT_DIR="$PREVIOUS_DIR"
+        PREVIOUS_DIR="$X"
+        if [ -z "$CURRENT_DIR" ] || ! cd -- "$CURRENT_DIR" 2>/dev/null; then
+            CURRENT_DIR="$PWD"
+            if [ -z "$CURRENT_DIR" ] || ! cd -- "$CURRENT_DIR" 2>/dev/null; then
+                CURRENT_DIR="$HOME"
+                cd -- "$CURRENT_DIR" 2>/dev/null || true
+            fi
+        fi
+    fi
+    CURRENT_DIR="$(pwd)"
+    rofi_item '' 'prompt' 'Save as'
+    rofi_item '' 'keep-selection' 'true'
+    rofi_item '' 'message' "<span color='#1abc9c'>Current directory</span><span color='#95a5a6'>:</span> <span color='#ecf0f1'>$(homify "$(escape_pango "$CURRENT_DIR")")</span>"
+    if [ "$CURRENT_DIR" != "/" ]; then
+        rofi_item ".." 'info' '..' 'icon' 'go-up'
+    fi
+    COUNTER=1
+    SELECTOR=0
+    for FN in *; do
+        [ -d "$FN" ] || continue
+        [ "$CURRENT_DIR" = "/" ] && FULL_FN="$CURRENT_DIR$FN" || FULL_FN="$CURRENT_DIR/$FN"
+        rofi_item "$FN/" 'info' "$FULL_FN" 'icon' 'folder'
+        [ "$FULL_FN" != "$PREVIOUS_DIR" ] || SELECTOR="$COUNTER"
+        COUNTER=$(( COUNTER + 1 ))
+    done
+    for FN in *; do
+        [ ! -d "$FN" ] || continue
+        [ -e "$FN" ] || continue
+        [ "$CURRENT_DIR" = "/" ] && FULL_FN="$CURRENT_DIR$FN" || FULL_FN="$CURRENT_DIR/$FN"
+        rofi_item "$FN" 'info' "$FULL_FN" 'icon' "thumbnail:/$FULL_FN"
+    done
+    # This doesn't work always, see this bug:
+    # https://github.com/davatorium/rofi/issues/2037
+    rofi_item '' 'new-selection' "$SELECTOR"
+    echo "$CURRENT_DIR" > "$TEMP_FILE_CURRENT_DIR"
+}
+
+case "$ROFI_RETV" in
+    0) # Initial call of script
+        rofi_directory_items "$(cat "$TEMP_FILE_CURRENT_DIR")"
+        ;;
+    1) # Selected an entry
+        PREVIOUS_DIR="$(cat "$TEMP_FILE_CURRENT_DIR")"
+        if [ "$ROFI_INFO" = ".." ]; then
+            CURRENT_DIR="${PREVIOUS_DIR%/*}"
+            [ -n "$CURRENT_DIR" ] || CURRENT_DIR="/"
+            rofi_directory_items "$CURRENT_DIR" "$PREVIOUS_DIR"
+        elif [ -d "$ROFI_INFO" ]; then
+            rofi_directory_items "$ROFI_INFO" "$PREVIOUS_DIR"
+        else
+            echo "$ROFI_INFO" > "$TEMP_FILE_CURRENT_FILE"
+        fi
+        ;;
+    2) # Selected a custom entry
+        CURRENT_DIR="$(cat "$TEMP_FILE_CURRENT_DIR")"
+        case "$1" in
+            "~"*|/*)
+                FULL_FN="$(expand_tilde "$1")" || FULL_FN="$CURRENT_DIR"
+                ;;
+            *)
+                [ "$CURRENT_DIR" = "/" ] && FULL_FN="$CURRENT_DIR$1" || FULL_FN="$CURRENT_DIR/$1"
+                ;;
+        esac
+        if [ -d "$FULL_FN" ]; then
+            PREVIOUS_DIR="$(cat "$TEMP_FILE_CURRENT_DIR")"
+            rofi_directory_items "$FULL_FN" "$PREVIOUS_DIR"
+        else
+            echo "$FULL_FN" > "$TEMP_FILE_CURRENT_FILE"
+        fi
+        ;;
+esac
+
+[ -z "$ROFI_RETV" ] || exit
+
+# shellcheck disable=SC2164
+SELF_DIR="$(cd "$(dirname "$0")"; pwd)"
+SELF_FILE="$SELF_DIR/$(basename "$0")"
+
+LOCK_FILE="${XDG_RUNTIME_DIR:-${XDG_CACHE_DIR:-$HOME/.cache}}/ck.screenshot.lock"
+
+# Don't do anything if another instance is running
+[ -e "$LOCK_FILE" ] && kill -0 "$(cat "$LOCK_FILE")" >/dev/null 2>&1 && exit || :
+echo "$$" > "$LOCK_FILE"
+
+# Make sure we don't have these environment variables
+unset SCREENSHOT_WHOLE_REGION SCREENSHOT_SCREEN_REGION \
+    SCREENSHOT_DESKTOP_REGION SCREENSHOT_WINDOW_REGION SCREENSHOT_REGION \
+    HYPR_CLIENTS HYPR_LAYERS \
+    TEMP_FILE_CURRENT_DIR TEMP_FILE_CURRENT_FILE TEMP_FILE_PREV_DIR \
+    ROFI_THEME_FILE
+
+hyprctl keyword layerrule "noanim,selection" >/dev/null
+
+# shellcheck disable=SC2329
+cleanup() {
+    set +e
+    {
+        [ -z "$PID_HYPRPICKER" ] || kill "$PID_HYPRPICKER"
+        for TEMP_FN in \
+            "$SCREENSHOT_WHOLE_REGION" \
+            "$SCREENSHOT_SCREEN_REGION" \
+            "$SCREENSHOT_DESKTOP_REGION" \
+            "$SCREENSHOT_WINDOW_REGION" \
+            "$SCREENSHOT_REGION" \
+            "$HYPR_CLIENTS" \
+            "$HYPR_LAYERS" \
+            "$TEMP_FILE_CURRENT_DIR" \
+            "$TEMP_FILE_CURRENT_FILE" \
+            "$TEMP_FILE_PREV_DIR" \
+            "$ROFI_THEME_FILE"
+        do
+            [ -z "$TEMP_FN" ] || rm -f "$TEMP_FN"
+        done
+    } >/dev/null 2>&1
+    exit "$1"
+}
+
+trap 'cleanup $?' EXIT INT TERM HUP
+
+save_as() {
+    magick "$1" -strip -define png:compression-level=9 "PNG:$2"
+}
+
+get_nth() {
+    IDX="$1"
+    shift
+    while [ "$IDX" -gt 0 ]; do
+        shift
+        IDX=$(( IDX - 1 ))
+    done
+    echo "$1"
+}
+
+rofi_theme() {
+    [ -n "$ROFI_THEME_FILE" ] || ROFI_THEME_FILE="$(mktemp)"
+    if [ -r "$SELF_DIR/$1.rasi" ]; then
+        cp -r "$SELF_DIR/$1.rasi" "$ROFI_THEME_FILE"
+    else
+        sed -n "/^--- $1.rasi/,/^---/{/^---/d;p}" "$SELF_FILE" > "$ROFI_THEME_FILE"
+    fi
+}
+
+while true; do
+
+    HYPR_WORKSPACES=$(hyprctl monitors -j | jq '[
+        .[].activeWorkspace.id,
+        .[].specialWorkspace.id | select(. != null and . != 0)
+    ] | flatten | unique')
+
+    [ -n "$HYPR_CLIENTS" ] || HYPR_CLIENTS="$(mktemp)"
+    hyprctl clients -j | jq --argjson visibleWorkspaces "$HYPR_WORKSPACES" \
+        '[
+            .[]
+            | select([.workspace.id] | inside($visibleWorkspaces))
+            | select(.at | type == "array")
+            | select(.size | type == "array")
+            | select(.hidden == false)
+        ]' \
+        > "$HYPR_CLIENTS"
+
+    [ -n "$HYPR_LAYERS" ] || HYPR_LAYERS="$(mktemp)"
+    hyprctl layers -j | jq \
+        '[
+             ..
+             | objects
+             | select(has("x") and has("y") and has("w") and has("h") and has("namespace"))
+             | {
+                 at: [.x, .y],
+                 size: [.w, .h],
+                 initialTitle: .namespace,
+             }
+        ]' \
+        > "$HYPR_LAYERS"
+
+    WHOLE_REGION="$(hyprctl monitors -j | jq -r '
+        (map(.x) | min) as $minx |
+        (map(.y) | min) as $miny |
+        (map(.x + (.width / .scale) | trunc) | max) as $maxx |
+        (map(.y + (.height / .scale) | trunc) | max) as $maxy |
+        {
+            x: $minx,
+            y: $miny,
+            w: ($maxx - $minx),
+            h: ($maxy - $miny),
+        }
+        | "\(.x),\(.y) \(.w)x\(.h)"
+    ')"
+
+    hyprpicker -rz &
+    PID_HYPRPICKER=$!
+    sleep 0.2
+
+    unset WAIT_PIDS
+
+    if [ -z "$SCREENSHOT_WHOLE_REGION" ]; then
+        SCREENSHOT_WHOLE_REGION="$(mktemp)"
+        export SCREENSHOT_WHOLE_REGION
+    fi
+    grim -g "$WHOLE_REGION" -t ppm "$SCREENSHOT_WHOLE_REGION" &
+    WAIT_PIDS="$!"
+
+    REGION=$(slurp -d -b '#ffffff20' -c '#336699EE') || unset REGION
+    [ -n "$REGION" ] || exit
+
+    XY="${REGION% *}"
+    DIM="${REGION#* }"
+    X="${XY%,*}"
+    Y="${XY#*,}"
+    W="${DIM%x*}"
+    H="${DIM#*x}"
+
+    SCREEN_REGION="$(hyprctl monitors -j | jq --argjson x "$X" --argjson y "$Y" --argjson w "$W" --argjson h "$H" -r '
+        map(
+            if (
+                (.x <= $x) and
+                (.y <= $y) and
+                ((.x + (.width / .scale) | trunc) >= ($x + $w)) and
+                ((.y + (.height / .scale) | trunc) >= ($y + $h))
+            ) then
+                { x: .x, y: .y, w: (.width / .scale) | trunc, h: (.height / .scale) | trunc, r: .reserved }
+            else
+                empty
+            end
+        )
+        | first
+        | select(.)
+        | "\(.x),\(.y) \(.w)x\(.h)|\(.x + .r[0]),\(.y + .r[1]) \(.w - .r[0] - .r[2])x\(.h - .r[1] - .r[3])"
+    ')"
+
+    DESKTOP_REGION="${SCREEN_REGION#*|}"
+    SCREEN_REGION="${SCREEN_REGION%|*}"
+
+    if [ "$DESKTOP_REGION" != "$SCREEN_REGION" ]; then
+        if [ -z "$SCREENSHOT_DESKTOP_REGION" ]; then
+            SCREENSHOT_DESKTOP_REGION="$(mktemp)"
+            export SCREENSHOT_DESKTOP_REGION
+        fi
+        grim -g "$DESKTOP_REGION" -t ppm "$SCREENSHOT_DESKTOP_REGION" &
+        WAIT_PIDS="$WAIT_PIDS $!"
+    elif [ -n "$SCREENSHOT_DESKTOP_REGION" ]; then
+        rm -f "$SCREENSHOT_DESKTOP_REGION"
+        unset SCREENSHOT_DESKTOP_REGION
+    fi
+
+    if [ -n "$SCREEN_REGION" ]; then
+        if [ -z "$SCREENSHOT_SCREEN_REGION" ]; then
+            SCREENSHOT_SCREEN_REGION="$(mktemp)"
+            export SCREENSHOT_SCREEN_REGION
+        fi
+        grim -g "$SCREEN_REGION" -t ppm "$SCREENSHOT_SCREEN_REGION" &
+        WAIT_PIDS="$WAIT_PIDS $!"
+    elif [ -n "$SCREENSHOT_SCREEN_REGION" ]; then
+        rm -f "$SCREENSHOT_SCREEN_REGION"
+        unset SCREENSHOT_SCREEN_REGION
+    fi
+
+    WINDOW_REGION="$(jq --slurp --argjson x "$X" --argjson y "$Y" --argjson w "$W" --argjson h "$H" -r \
+        'add
+        | map(
+            if (
+                (.at[0] <= $x) and
+                (.at[1] <= $y) and
+                ((.at[0] + .size[0]) >= ($x + $w)) and
+                ((.at[1] + .size[1]) >= ($y + $h))
+            ) then
+                . + { area: (.size[0] * .size[1]) }
+            else
+                empty
+            end
+        )
+        | sort_by(.area)
+        | first
+        | select(.)
+        | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])|\(.initialTitle)"
+        ' \
+        "$HYPR_CLIENTS" "$HYPR_LAYERS"
+    )"
+
+    if [ -n "$WINDOW_REGION" ]; then
+        if [ -z "$SCREENSHOT_WINDOW_REGION" ]; then
+            SCREENSHOT_WINDOW_REGION="$(mktemp)"
+            export SCREENSHOT_WINDOW_REGION
+        fi
+        WINDOW_NAME_SUFFIX="${WINDOW_REGION#*|}"
+        if [ -n "$WINDOW_NAME_SUFFIX" ]; then
+            WINDOW_NAME_SUFFIX="$(echo "$WINDOW_NAME_SUFFIX" \
+                | sed -e 's/[^A-Za-z0-9.-]\+/_/g' -e 's/^_\+//' \
+                | awk '{print substr($0,1,50)}' \
+                | sed -e 's/_\+$//')"
+            [ -z "$WINDOW_NAME_SUFFIX" ] || WINDOW_NAME_SUFFIX="-$WINDOW_NAME_SUFFIX"
+        fi
+        WINDOW_REGION="${WINDOW_REGION%%|*}"
+        grim -g "$WINDOW_REGION" -t ppm "$SCREENSHOT_WINDOW_REGION" &
+        WAIT_PIDS="$WAIT_PIDS $!"
+    elif [ -n "$SCREENSHOT_WINDOW_REGION" ]; then
+        rm -f "$SCREENSHOT_WINDOW_REGION"
+        unset SCREENSHOT_WINDOW_REGION
+        unset WINDOW_NAME_SUFFIX
+    fi
+
+    if [ -z "$SCREENSHOT_REGION" ]; then
+        SCREENSHOT_REGION="$(mktemp)"
+        export SCREENSHOT_REGION
+    fi
+
+    grim -g "$REGION" -t ppm "$SCREENSHOT_REGION"
+
+    for WAIT_PID in $WAIT_PIDS; do
+        wait "$WAIT_PID"
+    done
+
+    kill "$PID_HYPRPICKER"
+    unset PID_HYPRPICKER
+
+    ACTION_IDX=0
+    AREA_ACTION="region"
+    AREA_SCREENSHOT="$SCREENSHOT_REGION"
+    SCREENSHOT_FILE_DIR="$HOME/Pictures/Screenshots"
+    SCREENSHOT_FILE_NAME="screenshot-$(date '+%Y-%m-%d_%H%M%S')${WINDOW_NAME_SUFFIX}.png"
+
+    mkdir -p "$SCREENSHOT_FILE_DIR"
+
+    while true; do
+
+        set -- 'Copy to clipboard' \
+            'Save' \
+            'Save as...' \
+            'Annotate' \
+            'Edit' \
+            '<span color="#9b59b6">Choose area</span>' \
+            '<span color="#9b59b6">Make new screenshot</span>' \
+            '<span color="#e74c3c">Cancel</span>'
+
+        rofi_theme 'main'
+        ACTION_IDX=$(
+            ROFI_PID="$(mktemp)"
+            for ITEM; do
+                rofi_item "$ITEM" 'icon' "$AREA_SCREENSHOT"
+            done | rofi -markup-rows -dmenu -format i -sync \
+                -hover-select -me-select-entry '' -me-accept-entry MousePrimary \
+                -select "$(get_nth "$ACTION_IDX" "$@")" \
+                -theme "$ROFI_THEME_FILE" -pid "$ROFI_PID" || true
+            rm -f "$ROFI_PID"
+        )
+
+        case "$ACTION_IDX" in
+            0) ACTION='copy';;
+            1) ACTION='save';;
+            2) ACTION='save_as';;
+            3) ACTION='annotate';;
+            4) ACTION='edit';;
+            5) ACTION='choose_area';;
+            6) ACTION='retry';;
+            *) ACTION='cancel';;
+        esac
+
+        [ "$ACTION" != 'cancel' ] || exit 0
+
+        [ "$ACTION" != 'retry'  ] || break
+
+        if [ "$ACTION" = 'copy' ]; then
+
+            # Save as temporary file to make sure that convertation is sucessful
+            TEMP_SCREENSHOT_CONVERTED="$(mktemp)"
+            if save_as "$AREA_SCREENSHOT" "$TEMP_SCREENSHOT_CONVERTED"; then
+                if wl-copy --foreground --type 'image/png' < "$TEMP_SCREENSHOT_CONVERTED"; then
+                    rm -f "$TEMP_SCREENSHOT_CONVERTED"
+                    exit 0
+                fi
+            fi
+
+            # If we are here, then copy failed.
+            # TODO: add handler for this error. May be show an error message?
+            # As for now, we just return to the main menu.
+
+            rm -f "$TEMP_SCREENSHOT_CONVERTED"
+            continue
+
+        fi
+
+        if [ "$ACTION" = 'save' ] || [ "$ACTION" = 'edit' ]; then
+
+            if save_as "$AREA_SCREENSHOT" "$SCREENSHOT_FILE_DIR/$SCREENSHOT_FILE_NAME"; then
+                if [ "$ACTION" = 'edit' ]; then
+                    # We don't use 'exec' to launch external tools as we want to cleanup temporary files.
+                    pinta "$SCREENSHOT_FILE_DIR/$SCREENSHOT_FILE_NAME"
+                fi
+                exit 0
+            fi
+
+            # If we are here, then save failed.
+            # TODO: add handler for this error. May be show an error message?
+            # As for now, we just return to the main menu.
+
+            continue
+
+        fi
+
+        if [ "$ACTION" = "save_as" ]; then
+
+            if [ -z "$TEMP_FILE_CURRENT_DIR" ]; then
+                TEMP_FILE_CURRENT_DIR="$(mktemp)"
+                export TEMP_FILE_CURRENT_DIR
+            fi
+            echo "$SCREENSHOT_FILE_DIR" > "$TEMP_FILE_CURRENT_DIR"
+
+            if [ -z "$TEMP_FILE_CURRENT_FILE" ]; then
+                TEMP_FILE_CURRENT_FILE="$(mktemp)"
+                export TEMP_FILE_CURRENT_FILE
+            fi
+            echo '' > "$TEMP_FILE_CURRENT_FILE"
+
+            if [ -z "$TEMP_FILE_PREV_DIR" ]; then
+                TEMP_FILE_PREV_DIR="$(mktemp)"
+                export TEMP_FILE_PREV_DIR
+            fi
+            echo '' > "$TEMP_FILE_PREV_DIR"
+
+            rofi_theme 'save'
+            ROFI_PID="$(mktemp)"
+            rofi -show action -modes "action:$SELF_FILE" \
+                -filter "$SCREENSHOT_FILE_NAME" \
+                -theme "$ROFI_THEME_FILE" -pid "$ROFI_PID"
+            rm -f "$ROFI_PID"
+
+            [ -n "$SCREENSHOT_FILE_FULL" ] || continue
+
+            SCREENSHOT_FILE_FULL="$(cat "$TEMP_FILE_CURRENT_FILE")"
+            [ "${SCREENSHOT_FILE_FULL#.png}" != "$SCREENSHOT_FILE_FULL" ] \
+                || SCREENSHOT_FILE_FULL="${SCREENSHOT_FILE_FULL}.png"
+
+            ! save_as "$AREA_SCREENSHOT" "$SCREENSHOT_FILE_FULL" || exit 0
+
+            # If we are here, then save_as failed.
+            # TODO: add handler for this error. May be show an error message?
+            # As for now, we just return to the main menu.
+
+            continue
+
+        fi
+
+        if [ "$ACTION" = 'choose_area' ]; then
+
+            set -- "region:Selected region:$SCREENSHOT_REGION" \
+                "window:Window:$SCREENSHOT_WINDOW_REGION" \
+                "desktop:Desktop:$SCREENSHOT_DESKTOP_REGION" \
+                "screen:Screen:$SCREENSHOT_SCREEN_REGION" \
+                "all:All screens:$SCREENSHOT_WHOLE_REGION"
+
+            rofi_theme 'area'
+            AREA_ACTION_IDX=$(
+                ROFI_PID="$(mktemp)"
+                SELECTION_IDX=-1
+                for ITEM; do
+                    ID="${ITEM%%:*}"
+                    SCREENSHOT_FILE="${ITEM#*:}"
+                    [ -n "$SCREENSHOT_FILE" ] || continue
+                    SELECTION_IDX=$(( SELECTION_IDX + 1 ))
+                    [ "$ID" = "$AREA_ACTION" ] || continue
+                    ITEM="${ITEM#*:}"
+                    SELECTION="${ITEM%%:*}"
+                    break
+                done
+                for ITEM; do
+                    ITEM="${ITEM#*:}"
+                    SCREENSHOT_FILE="${ITEM#*:}"
+                    [ -n "$SCREENSHOT_FILE" ] || continue
+                    ITEM="${ITEM%%:*}"
+                    rofi_item "$ITEM" "icon" "$SCREENSHOT_FILE"
+                done | rofi -dmenu -format i -sync \
+                    -hover-select -me-select-entry '' -me-accept-entry MousePrimary \
+                    -select "$SELECTION" -a "$SELECTION_IDX" \
+                    -theme "$ROFI_THEME_FILE" -pid "$ROFI_PID" || true
+                rm -f "$ROFI_PID"
+            )
+
+            if [ -n "$AREA_ACTION_IDX" ]; then
+                COUNTER=-1
+                for ITEM; do
+                    ID="${ITEM%%:*}"
+                    ITEM="${ITEM#*:}"
+                    SCREENSHOT_FILE="${ITEM#*:}"
+                    [ -n "$SCREENSHOT_FILE" ] || continue
+                    COUNTER=$(( COUNTER + 1 ))
+                    [ "$COUNTER" = "$AREA_ACTION_IDX" ] || continue
+                    AREA_ACTION="$ID"
+                    AREA_SCREENSHOT="$SCREENSHOT_FILE"
+                    break
+                done
+            fi
+
+            continue
+
+        fi
+
+        break
+
+    done
+
+    [ "$ACTION" = "retry"  ] || break
+
+done
+
+# We don't use 'exec' to launch external tools as we want to cleanup temporary files.
+
+if [ "$ACTION" = "annotate" ]; then
+    satty --filename "$AREA_SCREENSHOT" --fullscreen \
+        --output-filename "$SCREENSHOT_FILE_DIR/$SCREENSHOT_FILE_NAME" \
+        --early-exit \
+        --disable-notifications \
+        --no-window-decoration
+fi
+
+exit 0
+
+# shellcheck disable=all
+{
+
+--- area.rasi
+configuration {
+    show-icons: true;
+    cycle: false;
+}
+
+* {
+    background-color: transparent;
+}
+
+window {
+    padding: 0px;
+    border: 0;
+    // width: calc(18% * @COLUMNS@);
+    width: calc(18% * 5);
+    transparency: "real";
+    anchor: north;
+    location: center;
+}
+
+mainbox {
+    padding: 0px;
+    margin: 0px;
+    children: [listview];
+}
+
+listview {
+    // columns: @COLUMNS@;
+    columns: 5;
+    lines: 1;
+    fixed-columns: true;
+    spacing: 20px;
+    scrollbar: false;
+    cycle: false;
+}
+
+element {
+    padding: 10px;
+    border-radius: 20px;
+    orientation: vertical;
+    spacing: 0px;
+    background-color: #2c3e50;
+    border-color: #1abc9c;
+    border: 2px;
+    spacing: 10px;
+}
+
+element selected {
+    background-color: #16a085;
+}
+
+element normal.active {
+    background-color: #27ae60;
+}
+
+element alternate.active {
+    background-color: #27ae60;
+}
+
+element-icon {
+    background-color: Black;
+    border-radius: 10px;
+    size: 20%;
+}
+
+element-text {
+    text-color: #ecf0f1;
+    horizontal-align: 0.5;
+}
+---
+
+--- main.rasi
+configuration {
+    show-icons: false;
+    cycle: false;
+}
+
+* {
+    background-color: transparent;
+}
+
+window {
+    padding: 0px;
+    border: 0px;
+    width: 60%;
+    transparency: "real";
+    anchor: north;
+    location: center;
+}
+
+mainbox {
+    children: [wrap, listview-split];
+}
+
+wrap {
+    expand: false;
+    orientation: vertical;
+    children: [inputbar, message];
+}
+
+icon-current-entry {
+    expand: false;
+    size: 40%;
+    background-color: #2c3e50;
+    border-radius: 20px;
+    border: 2px;
+    border-color: #1abc9c;
+    padding: 20px;
+}
+
+element {
+    padding: 10px;
+    border-radius: 20px;
+    spacing: 0px;
+    background-color: #2c3e50;
+    border-color: #1abc9c;
+    border: 2px;
+}
+
+element selected {
+    background-color: #16a085;
+}
+
+element-icon {
+    size: 3em;
+}
+
+element-text {
+    text-color: #ecf0f1;
+    padding: 0px 10px;
+}
+
+listview-split {
+    orientation: horizontal;
+    children: [listview, icon-current-entry];
+    spacing: 40px;
+}
+
+listview {
+    lines: 7;
+    spacing: 10px;
+}
+---
+
+--- save.rasi
+configuration {
+    show-icons: true;
+    cycle: false;
+}
+
+* {
+    background-color: transparent;
+}
+
+element {
+    padding: 1px ;
+    cursor:  pointer;
+    spacing: 5px ;
+    border:  0;
+}
+
+element normal.normal {
+    background-color: #2c3e50;
+    text-color:       #bdc3c7;
+}
+
+element selected.normal {
+    background-color: #16a085;
+    text-color:       #ecf0f1;
+}
+
+element alternate.normal {
+    background-color: #34495e;
+    text-color:       #bdc3c7;
+}
+
+element-text {
+    background-color: transparent;
+    cursor:           inherit;
+    highlight:        inherit;
+    text-color:       inherit;
+}
+
+element-icon {
+    background-color: transparent;
+    size:             1.0000em ;
+    cursor:           inherit;
+    text-color:       inherit;
+}
+
+window {
+    padding: 0px;
+    border: 0px;
+    width: 60%;
+    transparency: "real";
+}
+
+mainbox {
+    padding: 0;
+    border:  0;
+    spacing: 10px;
+    children: [ inputbar, message, listview ];
+}
+
+message {
+    background-color: #2c3e50;
+    border-radius: 10px;
+    border: 2px;
+    border-color: #1abc9c;
+    padding: 8px 20px;
+    spacing:    0px;
+}
+
+listview {
+    scrollbar:    true;
+    fixed-height: 0;
+    background-color: #2c3e50;
+    border-radius: 10px;
+    border: 2px;
+    border-color: #1abc9c;
+    padding: 15px 20px;
+    spacing:    0px;
+}
+
+scrollbar {
+    width:        4px ;
+    padding:      0;
+    handle-width: 8px ;
+    border:       0;
+    handle-color: #7f8c8d;
+}
+
+inputbar {
+    children:   [ "prompt", "textbox-prompt-colon", "entry" ];
+    background-color: #2c3e50;
+    border-radius: 10px;
+    border: 2px;
+    border-color: #1abc9c;
+    padding: 8px 20px;
+    spacing:    0px;
+}
+
+entry {
+    text-color:        #ecf0f1;
+    cursor:            text;
+    spacing:           0;
+    placeholder-color: #7f8c8d;
+    placeholder:       "Enter filename for screenshot file";
+}
+
+prompt {
+    spacing:    0;
+    text-color: #1abc9c;
+}
+
+textbox-prompt-colon {
+    margin:     0px 0.3000em 0.0000em 0.0000em ;
+    expand:     false;
+    str:        ":";
+    text-color: #95a5a6;
+}
+---

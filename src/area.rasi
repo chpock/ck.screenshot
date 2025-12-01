@@ -10,8 +10,7 @@ configuration {
 window {
     padding: 0px;
     border: 0;
-    // width: calc(18% * @COLUMNS@);
-    width: calc(18% * 5);
+    width: calc(18% * @COLUMNS@);
     transparency: "real";
     anchor: north;
     location: center;
@@ -24,8 +23,7 @@ mainbox {
 }
 
 listview {
-    // columns: @COLUMNS@;
-    columns: 5;
+    columns: @COLUMNS@;
     lines: 1;
     fixed-columns: true;
     spacing: 20px;

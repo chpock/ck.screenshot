@@ -220,11 +220,33 @@ get_nth() {
 
 rofi_theme() {
     [ -n "$ROFI_THEME_FILE" ] || ROFI_THEME_FILE="$(mktemp)"
-    if [ -r "$SELF_DIR/$1.rasi" ]; then
-        cp -r "$SELF_DIR/$1.rasi" "$ROFI_THEME_FILE"
-    else
-        sed -n "/^--- $1.rasi/,/^---/{/^---/d;p}" "$SELF_FILE" > "$ROFI_THEME_FILE"
-    fi
+    {
+        if [ -r "$SELF_DIR/$1.rasi" ]; then
+            cat "$SELF_DIR/$1.rasi"
+        else
+            sed -n "/^--- $1.rasi/,/^---/{/^---/d;p}" "$SELF_FILE"
+        fi
+    } | filter "$2" "$3" > "$ROFI_THEME_FILE"
+}
+
+filter() {
+    while IFS= read -r LINE; do
+        if [ -n "$1" ]; then
+            while true; do
+                case "$LINE" in
+                    *"$1"*)
+                        PREFIX=${LINE%%"$1"*}
+                        SUFFIX=${LINE#*"$1"}
+                        LINE="${PREFIX}$2${SUFFIX}"
+                        ;;
+                    *)
+                        break
+                        ;;
+                esac
+            done
+        fi
+        echo "$LINE"
+    done
 }
 
 while true; do
@@ -534,20 +556,25 @@ while true; do
                 "screen:Screen:$SCREENSHOT_SCREEN_REGION" \
                 "all:All screens:$SCREENSHOT_WHOLE_REGION"
 
-            rofi_theme 'area'
             AREA_ACTION_IDX=$(
                 ROFI_PID="$(mktemp)"
-                SELECTION_IDX=-1
+                SELECTION_IDX=0
+                ACTIONS_COUNT=0
                 for ITEM; do
                     ID="${ITEM%%:*}"
+                    ITEM="${ITEM#*:}"
                     SCREENSHOT_FILE="${ITEM#*:}"
                     [ -n "$SCREENSHOT_FILE" ] || continue
-                    SELECTION_IDX=$(( SELECTION_IDX + 1 ))
-                    [ "$ID" = "$AREA_ACTION" ] || continue
-                    ITEM="${ITEM#*:}"
-                    SELECTION="${ITEM%%:*}"
-                    break
+                    if [ "$ID" = "$AREA_ACTION" ]; then
+                        SELECTION_IDX="$ACTIONS_COUNT"
+                        SELECTION="${ITEM%%:*}"
+                    fi
+                    ACTIONS_COUNT=$(( ACTIONS_COUNT + 1 ))
                 done
+                # We run 'rofi_theme' in subshell, but it should use ROFI_THEME_FILE
+                # environment variable from the parent shell instead of creating new one.
+                # It must have been defined earlier when the main UI was shown.
+                rofi_theme 'area' '@COLUMNS@' "$ACTIONS_COUNT"
                 for ITEM; do
                     ITEM="${ITEM#*:}"
                     SCREENSHOT_FILE="${ITEM#*:}"

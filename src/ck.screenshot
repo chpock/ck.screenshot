@@ -620,6 +620,7 @@ done
 if [ "$ACTION" = "annotate" ]; then
     satty --filename "$AREA_SCREENSHOT" --fullscreen \
         --output-filename "$SCREENSHOT_FILE_DIR/$SCREENSHOT_FILE_NAME" \
+        --copy-command 'wl-copy -t image/png' \
         --early-exit \
         --disable-notifications \
         --no-window-decoration

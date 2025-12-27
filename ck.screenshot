@@ -638,8 +638,9 @@ fi
 
 exit 0
 
-# shellcheck disable=all
-{
+# shellcheck disable=SC2317
+: <<EOF
+
 
 --- area.rasi
 * {
@@ -912,3 +913,4 @@ textbox-prompt-colon {
     text-color: var(separator-color);
 }
 ---
+EOF

@@ -7,11 +7,12 @@ ROFI_THEME_FILES = $(addsuffix .rasi,$(addprefix src/,$(ROFI_THEMES)))
 all: ck.screenshot
 
 ck.screenshot: $(SOURCE) $(ROFI_THEME_FILES) $(ROFI_THEME_COMMON_FILE)
-	cp -f "$<" "$@"
+	sed '/^EOF$$/d' "$<" > "$@"
 	for THEME_FILE in $(ROFI_THEME_FILES); do { \
 	    echo; \
 	    echo "--- $$(basename "$$THEME_FILE")"; \
 	    cat "$(ROFI_THEME_COMMON_FILE)" "$$THEME_FILE"; \
-	    echo "---"; \
+	    echo '---'; \
 	} >> "$@"; done
+	echo 'EOF' >> "$@"
 	chmod +x "$@"

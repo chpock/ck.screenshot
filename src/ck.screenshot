@@ -638,5 +638,7 @@ fi
 
 exit 0
 
-# shellcheck disable=all
-{
+# shellcheck disable=SC2317
+: <<EOF
+
+EOF

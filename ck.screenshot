@@ -739,7 +739,7 @@ mainbox {
 wrap {
     expand:      false;
     orientation: vertical;
-    children:    [ inputbar, message ];
+    children:    [ message ];
 }
 
 icon-current-entry {

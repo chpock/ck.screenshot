@@ -45,3 +45,23 @@ jobs:
           make_latest: true
           fail_on_unmatched_files: true
           generate_release_notes: true
+
+      - name: Update PKGBUILD
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          RELEASE_VERSION="$(echo "$RELEASE_VERSION" | tr -d 'v')"
+          sed -i "s/PLACEHOLDER_VERSION/$RELEASE_VERSION/g" aur/PKGBUILD
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: hyprsnap
+          pkgbuild: ./aur/PKGBUILD
+          updpkgsums: true
+          test: true
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ github.ref_name }}"
+          ssh_keyscan_types: rsa,ecdsa,ed25519

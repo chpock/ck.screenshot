@@ -37,12 +37,29 @@ element {
     border:           2px;
 }
 
+element-text {
+    padding: 0px 10px;
+}
+
 element selected {
     background-color: var(selected-background);
 }
 
-element-text {
-    padding: 0px 10px;
+element-text selected {
+}
+
+element normal.active, element alternate.active {
+}
+
+element-text normal.active, element-text alternate.active {
+    text-color: #5dade2;
+}
+
+element normal.urgent, element alternate.urgent {
+}
+
+element-text normal.urgent, element-text alternate.urgent {
+    text-color: #cd6155;
 }
 
 listview-split {

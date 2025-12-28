@@ -446,9 +446,9 @@ while true; do
             'Save as...' \
             'Annotate' \
             'Edit' \
-            '<span color="#9b59b6">Choose area</span>' \
-            '<span color="#9b59b6">Make new screenshot</span>' \
-            '<span color="#e74c3c">Cancel</span>'
+            'Choose area' \
+            'Make new screenshot' \
+            'Cancel'
 
         rofi_theme 'main'
         ACTION_IDX=$(
@@ -458,6 +458,7 @@ while true; do
             done | rofi -markup-rows -dmenu -format i -sync \
                 -hover-select -me-select-entry '' -me-accept-entry MousePrimary \
                 -select "$(get_nth "$ACTION_IDX" "$@")" \
+                -a 5,6 -u 7 \
                 -theme "$ROFI_THEME_FILE" -pid "$ROFI_PID" || true
             rm -f "$ROFI_PID"
         )
@@ -646,12 +647,12 @@ exit 0
 * {
     background-color:       transparent;
     border-color:           #1abc9c;
-    text-color:             #ecf0f1;
+    text-color:             #cad2d3;
     faded-text-color:       #bdc3c7;
     normal-background:      #2c3e50;
     alternate-background:   #34495e;
-    selected-background:    #16a085;
-    active-background:      #27ae60;
+    selected-background:    #0f705d;
+    active-background:      #391b45;
     preview-background:     #000000;
     scrollbar-handle-color: #7f8c8d;
     placeholder-color:      #7f8c8d;
@@ -720,12 +721,12 @@ element-text {
 * {
     background-color:       transparent;
     border-color:           #1abc9c;
-    text-color:             #ecf0f1;
+    text-color:             #cad2d3;
     faded-text-color:       #bdc3c7;
     normal-background:      #2c3e50;
     alternate-background:   #34495e;
-    selected-background:    #16a085;
-    active-background:      #27ae60;
+    selected-background:    #0f705d;
+    active-background:      #391b45;
     preview-background:     #000000;
     scrollbar-handle-color: #7f8c8d;
     placeholder-color:      #7f8c8d;
@@ -770,12 +771,29 @@ element {
     border:           2px;
 }
 
+element-text {
+    padding: 0px 10px;
+}
+
 element selected {
     background-color: var(selected-background);
 }
 
-element-text {
-    padding: 0px 10px;
+element-text selected {
+}
+
+element normal.active, element alternate.active {
+}
+
+element-text normal.active, element-text alternate.active {
+    text-color: #5dade2;
+}
+
+element normal.urgent, element alternate.urgent {
+}
+
+element-text normal.urgent, element-text alternate.urgent {
+    text-color: #cd6155;
 }
 
 listview-split {
@@ -794,12 +812,12 @@ listview {
 * {
     background-color:       transparent;
     border-color:           #1abc9c;
-    text-color:             #ecf0f1;
+    text-color:             #cad2d3;
     faded-text-color:       #bdc3c7;
     normal-background:      #2c3e50;
     alternate-background:   #34495e;
-    selected-background:    #16a085;
-    active-background:      #27ae60;
+    selected-background:    #0f705d;
+    active-background:      #391b45;
     preview-background:     #000000;
     scrollbar-handle-color: #7f8c8d;
     placeholder-color:      #7f8c8d;

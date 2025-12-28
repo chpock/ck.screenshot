@@ -446,9 +446,9 @@ while true; do
             'Save as...' \
             'Annotate' \
             'Edit' \
-            '<span color="#9b59b6">Choose area</span>' \
-            '<span color="#9b59b6">Make new screenshot</span>' \
-            '<span color="#e74c3c">Cancel</span>'
+            'Choose area' \
+            'Make new screenshot' \
+            'Cancel'
 
         rofi_theme 'main'
         ACTION_IDX=$(
@@ -458,6 +458,7 @@ while true; do
             done | rofi -markup-rows -dmenu -format i -sync \
                 -hover-select -me-select-entry '' -me-accept-entry MousePrimary \
                 -select "$(get_nth "$ACTION_IDX" "$@")" \
+                -a 5,6 -u 7 \
                 -theme "$ROFI_THEME_FILE" -pid "$ROFI_PID" || true
             rm -f "$ROFI_PID"
         )

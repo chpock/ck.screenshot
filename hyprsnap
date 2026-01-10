@@ -186,7 +186,11 @@ unset SCREENSHOT_WHOLE_REGION SCREENSHOT_SCREEN_REGION \
     TEMP_FILE_CURRENT_DIR TEMP_FILE_CURRENT_FILE TEMP_FILE_PREV_DIR \
     ROFI_THEME_FILE
 
-hyprctl keyword layerrule "noanim,selection" >/dev/null
+# The first variant is for hyprland version <= 0.52 and the second variant
+# is for hyprland version >= 0.53.
+hyprctl keyword layerrule "noanim,selection" >/dev/null 2>&1 \
+    || hyprctl keyword layerrule "match:class selector, no_anim on" >/dev/null \
+    || :
 
 # shellcheck disable=SC2329
 cleanup() {

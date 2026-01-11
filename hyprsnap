@@ -186,11 +186,17 @@ unset SCREENSHOT_WHOLE_REGION SCREENSHOT_SCREEN_REGION \
     TEMP_FILE_CURRENT_DIR TEMP_FILE_CURRENT_FILE TEMP_FILE_PREV_DIR \
     ROFI_THEME_FILE
 
-# The first variant is for hyprland version <= 0.52 and the second variant
-# is for hyprland version >= 0.53.
-hyprctl keyword layerrule "noanim,selection" >/dev/null 2>&1 \
-    || hyprctl keyword layerrule "match:class selector, no_anim on" >/dev/null \
-    || :
+# The first variant is for hyprland version <= 0.52
+if [ "$(hyprctl keyword layerrule "noanim,selection" 2>&1)" != "ok" ]; then
+    # This variant is for hyprland version >= 0.53
+    {
+        hyprctl keyword 'layerrule[hyprsnap_no_anim_selection]:match:namespace selection' || :
+        hyprctl keyword 'layerrule[hyprsnap_no_anim_selection]:no_anim on' || :
+        # Reload the rules, this to avoid hyprland bug related to layerrule. See:
+        # https://github.com/hyprwm/Hyprland/discussions/12950
+        hyprctl keyword 'windowrule[hyprsnap_no_anim_selection]:enable off' || :
+    } >/dev/null 2>&1
+fi
 
 # shellcheck disable=SC2329
 cleanup() {
